@@ -1,0 +1,5 @@
+{
+  "name": "HydroPass Guest Registration",
+  "description": "Automated biometric form filler and guest registration system for Hydro Park Body Corporate. Generates PDFs client-side and manages email dispatch.",
+  "requestFramePermissions": []
+}
