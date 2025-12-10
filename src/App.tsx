@@ -6,7 +6,7 @@ import StepGuestDetails from './components/StepGuestDetails';
 import StepPdfUpload from './components/StepPdfUpload';
 import StepEmailConfig from './components/StepEmailConfig';
 import StepComplete from './components/StepComplete';
-import { fillGuestForms, fileToBase64 } from './utils/pdfUtils';
+import { fillGuestForms, fileToBase64, compressImage } from './utils/pdfUtils';
 import { Download, AlertTriangle, FileText, Sparkles } from 'lucide-react';
 
 const createEmptyGuest = (): Guest => ({
@@ -96,25 +96,45 @@ function App() {
     setState(prev => ({ ...prev, isProcessing: true, processingError: null, generatedFiles: [] }));
 
     try {
+      // 1. Generate PDFs Client Side
       const filledPdfs = await fillGuestForms(state.pdfTemplate, state.guests, state.unitNumber);
 
       const filesToSend: File[] = [...filledPdfs];
-      state.guests.forEach(g => {
+      
+      // 2. Process Guests for Attachments (Compress Images)
+      // Use a loop to handle async compression
+      for (const g of state.guests) {
         if (g.idDocument) {
-             const ext = g.idDocument.name.split('.').pop();
-             const safeName = `ID_${g.name.replace(/\s+/g, '_')}.${ext}`;
+             let processedFile = g.idDocument;
+             
+             // Attempt to compress if it is an image
+             if (processedFile.type.startsWith('image/')) {
+                 try {
+                     processedFile = await compressImage(processedFile);
+                 } catch (err) {
+                     console.warn("Image compression failed for guest:", g.name, err);
+                     // Continue with original file if compression fails
+                 }
+             }
+
+             // Safe filename generation
+             const safeName = `ID_${g.name.replace(/\s+/g, '_')}_${processedFile.name}`;
+             
              try {
-                filesToSend.push(new File([g.idDocument], safeName, { type: g.idDocument.type }));
+                filesToSend.push(new File([processedFile], safeName, { type: processedFile.type }));
              } catch (e) {
-                filesToSend.push(g.idDocument);
+                // Fallback for browsers that might strictly block File creation properties
+                filesToSend.push(processedFile);
              }
         }
-      });
+      }
 
       setState(prev => ({ ...prev, generatedFiles: filesToSend }));
 
+      // 3. Convert to Base64
       const attachments = await Promise.all(filesToSend.map(f => fileToBase64(f)));
 
+      // 4. Construct Payload
       const payload = {
         to: state.emailAddresses.split(',').map(e => e.trim()).filter(Boolean),
         subject: state.customHeading || `Guest Registration - Unit ${state.unitNumber}`,
@@ -138,6 +158,7 @@ function App() {
         }))
       };
 
+      // 5. Send to Backend
       const response = await fetch(API_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -145,17 +166,25 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error("Backend server unavailable or returned error.");
+        // Try to get error text
+        const errorText = await response.text();
+        throw new Error(errorText || "Backend server unavailable or returned error.");
       }
 
       setState(prev => ({ ...prev, currentStep: 'complete', isProcessing: false }));
 
     } catch (error: any) {
       console.error("Processing failed:", error);
+      
+      let errorMessage = "The email server is currently unavailable.";
+      if (error.message && error.message.includes("413")) {
+          errorMessage = "The files are too large to send via email. Please download them below.";
+      }
+
       setState(prev => ({ 
           ...prev, 
           isProcessing: false, 
-          processingError: "The email server is currently unavailable. Please download the generated documents below and email them manually." 
+          processingError: `${errorMessage} Please download the generated documents below and email them manually.` 
       }));
     }
   };

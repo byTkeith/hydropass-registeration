@@ -72,3 +72,69 @@ export const fileToBase64 = (file: File): Promise<{ name: string; content: strin
     };
     reader.onerror = reject;
   });
+
+/**
+ * Compresses an image file to reduce size for email attachment.
+ * Resizes to max width 1024px and uses JPEG quality 0.6.
+ */
+export const compressImage = (file: File): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    // If it's a PDF or not an image, return as is
+    if (file.type === 'application/pdf' || !file.type.startsWith('image/')) {
+      resolve(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1024;
+        let width = img.width;
+        let height = img.height;
+
+        // Resize if too large
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            resolve(file); // Fallback to original
+            return;
+        }
+        
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              // Replace extension with .jpg since we converted to jpeg
+              const originalName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+              const newName = `${originalName}.jpg`;
+              
+              const compressedFile = new File([blob], newName, {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
+          },
+          'image/jpeg',
+          0.6 // 60% quality compression
+        );
+      };
+      img.onerror = () => resolve(file);
+    };
+    reader.onerror = () => resolve(file);
+  });
+};
