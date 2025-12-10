@@ -50,13 +50,17 @@ function App() {
     }));
   };
 
-  const handleGuestUpdate = (field: keyof Guest, value: any) => {
-    const updatedGuests = [...state.guests];
-    updatedGuests[state.currentGuestIndex] = {
-      ...updatedGuests[state.currentGuestIndex],
-      [field]: value
-    };
-    setState(prev => ({ ...prev, guests: updatedGuests }));
+  // FIXED: Now accepts a Partial<Guest> object to allow updating multiple fields (like date + duration) atomically.
+  // Also uses 'prev' state to ensure no race conditions occur during rapid updates.
+  const handleGuestUpdate = (updates: Partial<Guest>) => {
+    setState(prev => {
+      const updatedGuests = [...prev.guests];
+      updatedGuests[prev.currentGuestIndex] = {
+        ...updatedGuests[prev.currentGuestIndex],
+        ...updates
+      };
+      return { ...prev, guests: updatedGuests };
+    });
   };
 
   const handleGuestNext = () => {

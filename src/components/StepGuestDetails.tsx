@@ -1,13 +1,14 @@
 import React from 'react';
 import { Guest } from '../types';
-import { User, CreditCard, Mail, Car, Calendar, Clock, Upload, ArrowRight, ArrowLeft, Trash2, CheckCircle, FileText } from 'lucide-react';
+import { User, CreditCard, Mail, Car, Calendar, Clock, Upload, ArrowRight, ArrowLeft, Trash2, CheckCircle } from 'lucide-react';
 
 interface Props {
   guest: Guest;
   index: number;
   totalGuests: number;
   unitNumber: string;
-  updateGuest: (field: keyof Guest, value: any) => void;
+  // Updated type: now accepts Partial<Guest> object for multiple field updates
+  updateGuest: (updates: Partial<Guest>) => void;
   onNext: () => void;
   onPrev: () => void;
 }
@@ -33,27 +34,31 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
   };
 
   const handleDateChange = (field: 'checkIn' | 'checkOut', value: string) => {
-    updateGuest(field, value);
+    // Construct the update object
+    const updates: Partial<Guest> = { [field]: value };
+    
+    // Determine the values to be used for calculation (new value vs existing state)
     const inDate = field === 'checkIn' ? value : guest.checkIn;
     const outDate = field === 'checkOut' ? value : guest.checkOut;
     
     // Auto-reset duration if dates become invalid
     if (field === 'checkIn' && guest.checkOut && value >= guest.checkOut) {
-         updateGuest('checkOut', '');
-         updateGuest('duration', '');
-         return;
+         updates.checkOut = '';
+         updates.duration = '';
+    } else if (inDate && outDate) {
+        // Calculate duration and add to the SAME update object
+        updates.duration = calculateDuration(inDate, outDate);
     }
-
-    if (inDate && outDate) {
-        updateGuest('duration', calculateDuration(inDate, outDate));
-    }
+    
+    // Send one atomic update to App.tsx
+    updateGuest(updates);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
         if (file.type === "application/pdf" || file.type.startsWith("image/")) {
-            updateGuest('idDocument', file);
+            updateGuest({ idDocument: file });
         } else {
             alert("Invalid file type. Please upload PDF or Image.");
         }
@@ -98,7 +103,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
                 <input 
                     type="text" 
                     value={guest.name}
-                    onChange={(e) => updateGuest('name', e.target.value)}
+                    onChange={(e) => updateGuest({ name: e.target.value })}
                     className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none text-sm transition-all text-slate-800"
                     placeholder="e.g. Jane Doe"
                 />
@@ -112,7 +117,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
                 <input 
                     type="text" 
                     value={guest.idNumber}
-                    onChange={(e) => updateGuest('idNumber', e.target.value)}
+                    onChange={(e) => updateGuest({ idNumber: e.target.value })}
                     className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none text-sm transition-all text-slate-800"
                     placeholder="Identity Number"
                 />
@@ -126,7 +131,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
                 <input 
                     type="tel" 
                     value={guest.contactNumber}
-                    onChange={(e) => updateGuest('contactNumber', e.target.value)}
+                    onChange={(e) => updateGuest({ contactNumber: e.target.value })}
                     className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none text-sm transition-all text-slate-800"
                     placeholder="+27..."
                 />
@@ -146,7 +151,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
                 <input 
                     type="text" 
                     value={guest.vehicleMake}
-                    onChange={(e) => updateGuest('vehicleMake', e.target.value)}
+                    onChange={(e) => updateGuest({ vehicleMake: e.target.value })}
                     className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none text-sm transition-all text-slate-800"
                     placeholder="e.g. Toyota Corolla"
                 />
@@ -158,7 +163,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
             <input 
                 type="text" 
                 value={guest.vehicleReg}
-                onChange={(e) => updateGuest('vehicleReg', e.target.value)}
+                onChange={(e) => updateGuest({ vehicleReg: e.target.value })}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none text-sm transition-all text-slate-800"
                 placeholder="e.g. AB 12 XY GP"
             />
@@ -169,7 +174,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
             <input 
                 type="text" 
                 value={guest.parkingBay}
-                onChange={(e) => updateGuest('parkingBay', e.target.value)}
+                onChange={(e) => updateGuest({ parkingBay: e.target.value })}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none text-sm transition-all text-slate-800"
                 placeholder="Bay Number (Optional)"
             />
@@ -242,7 +247,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
                         <button 
                             onClick={(e) => {
                                 e.preventDefault();
-                                updateGuest('idDocument', null);
+                                updateGuest({ idDocument: null });
                             }}
                             className="px-4 py-2 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors flex items-center shadow-sm"
                         >
