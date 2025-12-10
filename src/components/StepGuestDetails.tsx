@@ -48,6 +48,9 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
     } else if (inDate && outDate) {
         // Calculate duration and add to the SAME update object
         updates.duration = calculateDuration(inDate, outDate);
+    } else {
+        // EXPLICITLY CLEAR DURATION if dates are missing
+        updates.duration = '';
     }
     
     // Send one atomic update to App.tsx
