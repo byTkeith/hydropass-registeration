@@ -14,6 +14,15 @@ interface Props {
 
 const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumber, updateGuest, onNext, onPrev }) => {
 
+  // Helper to get local date string YYYY-MM-DD to avoid timezone issues with UTC
+  const getLocalTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const calculateDuration = (inDate: string, outDate: string) => {
     if (!inDate || !outDate) return "";
     const start = new Date(inDate);
@@ -27,6 +36,14 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
     updateGuest(field, value);
     const inDate = field === 'checkIn' ? value : guest.checkIn;
     const outDate = field === 'checkOut' ? value : guest.checkOut;
+    
+    // Auto-reset duration if dates become invalid
+    if (field === 'checkIn' && guest.checkOut && value >= guest.checkOut) {
+         updateGuest('checkOut', '');
+         updateGuest('duration', '');
+         return;
+    }
+
     if (inDate && outDate) {
         updateGuest('duration', calculateDuration(inDate, outDate));
     }
@@ -43,7 +60,15 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
     }
   };
 
-  const isValid = guest.name && guest.idNumber && guest.contactNumber && guest.checkIn && guest.checkOut && guest.idDocument;
+  // Strict validation to enable Next button
+  const isValid = 
+      Boolean(guest.name && guest.name.trim()) && 
+      Boolean(guest.idNumber && guest.idNumber.trim()) && 
+      Boolean(guest.contactNumber && guest.contactNumber.trim()) && 
+      Boolean(guest.checkIn) && 
+      Boolean(guest.checkOut) && 
+      Boolean(guest.idDocument) &&
+      Boolean(guest.duration && !guest.duration.includes("Invalid"));
 
   return (
     <div className="space-y-6 animate-slide-up">
@@ -163,7 +188,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
                 <input 
                     type="date" 
                     value={guest.checkIn}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={getLocalTodayString()}
                     onChange={(e) => handleDateChange('checkIn', e.target.value)}
                     className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none text-sm transition-all text-slate-800"
                 />
@@ -177,7 +202,7 @@ const StepGuestDetails: React.FC<Props> = ({ guest, index, totalGuests, unitNumb
                 <input 
                     type="date" 
                     value={guest.checkOut}
-                    min={guest.checkIn || new Date().toISOString().split('T')[0]}
+                    min={guest.checkIn || getLocalTodayString()}
                     onChange={(e) => handleDateChange('checkOut', e.target.value)}
                     className="w-full pl-10 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none text-sm transition-all text-slate-800"
                 />
