@@ -51,7 +51,8 @@ export async function fillGuestForms(
     placeText(new Date().toLocaleDateString(), 64.06, 247.04, 11);
 
     const pdfBytes = await pdfDoc.save();
-    const blob = new Blob([pdfBytes], { type: "application/pdf" });
+    // Cast pdfBytes to any to avoid TypeScript error regarding SharedArrayBuffer/BlobPart
+    const blob = new Blob([pdfBytes as any], { type: "application/pdf" });
     
     const fileName = `GuestForm_Unit${unitNumber}_${guest.name.replace(/\s+/g, '_')}.pdf`;
     results.push(new File([blob], fileName, { type: "application/pdf" }));
