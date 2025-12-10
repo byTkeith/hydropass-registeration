@@ -10,6 +10,7 @@ interface Props {
   guests: AppState['guests'];
   unitNumber: string;
   isProcessing: boolean;
+  processingStatus?: string; // Add prop
   onPrev: () => void;
   onProcess: () => void;
 }
@@ -22,6 +23,7 @@ const StepEmailConfig: React.FC<Props> = ({
     guests, 
     unitNumber,
     isProcessing,
+    processingStatus, // Destructure prop
     onPrev, 
     onProcess 
 }) => {
@@ -126,7 +128,7 @@ const StepEmailConfig: React.FC<Props> = ({
                     {isProcessing ? (
                         <>
                             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                            Processing...
+                            {processingStatus || 'Processing...'}
                         </>
                     ) : (
                         <>

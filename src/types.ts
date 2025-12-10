@@ -24,12 +24,13 @@ export interface AppState {
   emailAddresses: string;
   customHeading: string;
   isProcessing: boolean;
+  processingStatus?: string;
   processingError: string | null;
   generatedFiles: File[];
 }
 
 // --- CHANGE EMAILS HERE FOR TESTING ---
-//export const DEFAULT_EMAIL = "hpstobookings@gmail.com, hpbookings@icloud.com, hydroparkfm@gmail.com, hydroparkreception@gmail.com, vishaun.b.maharaj@icloud.com";
-export const DEFAULT_EMAIL = "nyevedzanaikeith133@gmail.com";
+export const DEFAULT_EMAIL = "hpstobookings@gmail.com, hpbookings@icloud.com, hydroparkfm@gmail.com, hydroparkreception@gmail.com, vishaun.b.maharaj@icloud.com";
+
 // Vercel Serverless API Route
 export const API_ENDPOINT = "/api/send-email";

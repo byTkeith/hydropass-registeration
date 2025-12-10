@@ -6,7 +6,7 @@ import StepGuestDetails from './components/StepGuestDetails';
 import StepPdfUpload from './components/StepPdfUpload';
 import StepEmailConfig from './components/StepEmailConfig';
 import StepComplete from './components/StepComplete';
-import { fillGuestForms, fileToBase64, compressImage } from './utils/pdfUtils';
+import { fillGuestForms, fileToBase64, compressImage, calculatePayloadSize } from './utils/pdfUtils';
 import { Download, AlertTriangle, FileText, Sparkles } from 'lucide-react';
 
 const createEmptyGuest = (): Guest => ({
@@ -50,8 +50,6 @@ function App() {
     }));
   };
 
-  // FIXED: Now accepts a Partial<Guest> object to allow updating multiple fields (like date + duration) atomically.
-  // Also uses 'prev' state to ensure no race conditions occur during rapid updates.
   const handleGuestUpdate = (updates: Partial<Guest>) => {
     setState(prev => {
       const updatedGuests = [...prev.guests];
@@ -93,97 +91,161 @@ function App() {
 
   const handleProcessing = async () => {
     if (!state.pdfTemplate) return;
-    setState(prev => ({ ...prev, isProcessing: true, processingError: null, generatedFiles: [] }));
+    setState(prev => ({ ...prev, isProcessing: true, processingError: null, generatedFiles: [], processingStatus: "Generating Documents..." }));
 
     try {
       // 1. Generate PDFs Client Side
       const filledPdfs = await fillGuestForms(state.pdfTemplate, state.guests, state.unitNumber);
 
-      const filesToSend: File[] = [...filledPdfs];
+      const allFiles: File[] = [];
+      const guestPayloads: { guest: Guest; attachments: { filename: string; content: string; encoding: string }[] }[] = [];
+
+      // 2. Prepare all files and compress images per guest
+      setState(prev => ({ ...prev, processingStatus: "Optimizing Attachments..." }));
       
-      // 2. Process Guests for Attachments (Compress Images)
-      // Use a loop to handle async compression
-      for (const g of state.guests) {
-        if (g.idDocument) {
-             let processedFile = g.idDocument;
-             
-             // Attempt to compress if it is an image
+      for (let i = 0; i < state.guests.length; i++) {
+        const guest = state.guests[i];
+        const guestPdf = filledPdfs[i];
+        const attachmentsForGuest = [];
+
+        // Process PDF
+        allFiles.push(guestPdf);
+        const pdfBase64 = await fileToBase64(guestPdf);
+        attachmentsForGuest.push({
+            filename: guestPdf.name,
+            content: pdfBase64.content,
+            encoding: 'base64'
+        });
+
+        // Process ID
+        if (guest.idDocument) {
+             let processedFile = guest.idDocument;
              if (processedFile.type.startsWith('image/')) {
                  try {
                      processedFile = await compressImage(processedFile);
                  } catch (err) {
-                     console.warn("Image compression failed for guest:", g.name, err);
-                     // Continue with original file if compression fails
+                     console.warn("Image compression failed", err);
                  }
              }
 
-             // Safe filename generation
-             const safeName = `ID_${g.name.replace(/\s+/g, '_')}_${processedFile.name}`;
-             
+             const safeName = `ID_${guest.name.replace(/\s+/g, '_')}_${processedFile.name}`;
              try {
-                filesToSend.push(new File([processedFile], safeName, { type: processedFile.type }));
+                const finalFile = new File([processedFile], safeName, { type: processedFile.type });
+                allFiles.push(finalFile);
+                const idBase64 = await fileToBase64(finalFile);
+                attachmentsForGuest.push({
+                    filename: safeName,
+                    content: idBase64.content,
+                    encoding: 'base64'
+                });
              } catch (e) {
-                // Fallback for browsers that might strictly block File creation properties
-                filesToSend.push(processedFile);
+                // Fallback
+                allFiles.push(processedFile);
+                const idBase64 = await fileToBase64(processedFile);
+                attachmentsForGuest.push({
+                    filename: safeName,
+                    content: idBase64.content,
+                    encoding: 'base64'
+                });
              }
         }
+
+        guestPayloads.push({ guest, attachments: attachmentsForGuest });
       }
 
-      setState(prev => ({ ...prev, generatedFiles: filesToSend }));
+      setState(prev => ({ ...prev, generatedFiles: allFiles }));
 
-      // 3. Convert to Base64
-      const attachments = await Promise.all(filesToSend.map(f => fileToBase64(f)));
+      // 3. Batching Logic
+      // Vercel limit is ~4.5MB. We target 3.5MB to be safe.
+      const MAX_BATCH_SIZE = 3.5 * 1024 * 1024; 
+      
+      let currentBatchGuests: Guest[] = [];
+      let currentBatchAttachments: any[] = [];
+      
+      const batches: { guests: Guest[]; attachments: any[] }[] = [];
 
-      // 4. Construct Payload
-      const payload = {
-        to: state.emailAddresses.split(',').map(e => e.trim()).filter(Boolean),
-        subject: state.customHeading || `Guest Registration - Unit ${state.unitNumber}`,
-        html: `
-          <h2>Guest Registration Completed</h2>
-          <p><strong>Unit:</strong> ${state.unitNumber}</p>
-          <p><strong>Guests:</strong> ${state.guests.length}</p>
-          <hr/>
-          ${state.guests.map((g, i) => `
-            <div style="margin-bottom: 15px; padding: 10px; border-left: 3px solid #4f46e5;">
-              <strong>Guest ${i + 1}: ${g.name}</strong><br>
-              ID: ${g.idNumber}<br>
-              Stay: ${g.checkIn} to ${g.checkOut}
-            </div>
-          `).join('')}
-        `,
-        attachments: attachments.map(a => ({
-             filename: a.name,
-             content: a.content,
-             encoding: 'base64'
-        }))
-      };
+      for (const item of guestPayloads) {
+          // Check if adding this item exceeds batch limit
+          const tempAttachments = [...currentBatchAttachments, ...item.attachments];
+          // Calculate approximate size of payload with new attachments
+          const estimatedSize = calculatePayloadSize({ 
+              to: state.emailAddresses, 
+              html: "<div>placeholder</div>", 
+              attachments: tempAttachments 
+          });
 
-      // 5. Send to Backend
-      const response = await fetch(API_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        // Try to get error text
-        const errorText = await response.text();
-        throw new Error(errorText || "Backend server unavailable or returned error.");
+          if (estimatedSize > MAX_BATCH_SIZE && currentBatchGuests.length > 0) {
+              // Push current batch and start new one
+              batches.push({ guests: [...currentBatchGuests], attachments: [...currentBatchAttachments] });
+              currentBatchGuests = [item.guest];
+              currentBatchAttachments = [...item.attachments];
+          } else {
+              currentBatchGuests.push(item.guest);
+              currentBatchAttachments.push(...item.attachments);
+          }
+      }
+      
+      // Push remaining
+      if (currentBatchGuests.length > 0) {
+          batches.push({ guests: currentBatchGuests, attachments: currentBatchAttachments });
       }
 
-      setState(prev => ({ ...prev, currentStep: 'complete', isProcessing: false }));
+      // 4. Send Batches Sequentially
+      const recipients = state.emailAddresses.split(',').map(e => e.trim()).filter(Boolean);
+      const baseSubject = state.customHeading || `Guest Registration - Unit ${state.unitNumber}`;
+
+      for (let i = 0; i < batches.length; i++) {
+          const batch = batches[i];
+          const isMultiBatch = batches.length > 1;
+          const subject = isMultiBatch ? `${baseSubject} (Part ${i + 1}/${batches.length})` : baseSubject;
+          
+          setState(prev => ({ ...prev, processingStatus: `Sending email ${i + 1} of ${batches.length}...` }));
+
+          const payload = {
+            to: recipients,
+            subject: subject,
+            html: `
+              <h2>Guest Registration Completed ${isMultiBatch ? `(Part ${i + 1}/${batches.length})` : ''}</h2>
+              <p><strong>Unit:</strong> ${state.unitNumber}</p>
+              <p><strong>Guests in this email:</strong> ${batch.guests.length}</p>
+              <hr/>
+              ${batch.guests.map((g, idx) => `
+                <div style="margin-bottom: 15px; padding: 10px; border-left: 3px solid #4f46e5;">
+                  <strong>Guest: ${g.name}</strong><br>
+                  ID: ${g.idNumber}<br>
+                  Stay: ${g.checkIn} to ${g.checkOut}
+                </div>
+              `).join('')}
+            `,
+            attachments: batch.attachments
+          };
+
+          const response = await fetch(API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Batch ${i+1} failed: ${errorText}`);
+          }
+      }
+
+      setState(prev => ({ ...prev, currentStep: 'complete', isProcessing: false, processingStatus: undefined }));
 
     } catch (error: any) {
       console.error("Processing failed:", error);
       
       let errorMessage = "The email server is currently unavailable.";
       if (error.message && error.message.includes("413")) {
-          errorMessage = "The files are too large to send via email. Please download them below.";
+          errorMessage = "Files are still too large despite compression.";
       }
 
       setState(prev => ({ 
           ...prev, 
           isProcessing: false, 
+          processingStatus: undefined,
           processingError: `${errorMessage} Please download the generated documents below and email them manually.` 
       }));
     }
@@ -318,6 +380,7 @@ function App() {
                 guests={state.guests}
                 unitNumber={state.unitNumber}
                 isProcessing={state.isProcessing}
+                processingStatus={state.processingStatus}
                 onPrev={() => setState(s => ({...s, currentStep: 'pdfUpload'}))}
                 onProcess={handleProcessing}
             />

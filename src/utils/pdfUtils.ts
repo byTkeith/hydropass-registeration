@@ -75,7 +75,7 @@ export const fileToBase64 = (file: File): Promise<{ name: string; content: strin
 
 /**
  * Compresses an image file to reduce size for email attachment.
- * Resizes to max width 1024px and uses JPEG quality 0.6.
+ * Resizes to max width 600px and uses JPEG quality 0.5.
  */
 export const compressImage = (file: File): Promise<File> => {
   return new Promise((resolve, reject) => {
@@ -92,7 +92,8 @@ export const compressImage = (file: File): Promise<File> => {
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1024;
+        // Aggressive compression for Vercel limits
+        const MAX_WIDTH = 600;
         let width = img.width;
         let height = img.height;
 
@@ -130,11 +131,18 @@ export const compressImage = (file: File): Promise<File> => {
             }
           },
           'image/jpeg',
-          0.6 // 60% quality compression
+          0.5 // 50% quality compression
         );
       };
       img.onerror = () => resolve(file);
     };
     reader.onerror = () => resolve(file);
   });
+};
+
+/**
+ * Calculates approximate JSON payload size in bytes
+ */
+export const calculatePayloadSize = (payload: any): number => {
+    return new TextEncoder().encode(JSON.stringify(payload)).length;
 };
