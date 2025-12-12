@@ -32,5 +32,5 @@ export interface AppState {
 // --- CHANGE EMAILS HERE FOR TESTING ---
 export const DEFAULT_EMAIL = "hpstobookings@gmail.com, hpbookings@icloud.com, hydroparkfm@gmail.com, hydroparkreception@gmail.com, vishaun.b.maharaj@icloud.com";
 
-// Vercel Serverless API Route
-export const API_ENDPOINT = "/api/send-email";
+// Use VITE_API_URL if set (for external backend), otherwise fall back to Vercel route for legacy support
+export const API_ENDPOINT = (import.meta as any).env?.VITE_API_URL || "/api/send-email";

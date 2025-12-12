@@ -54,9 +54,9 @@ const StepEmailConfig: React.FC<Props> = ({
                     <AlertCircle className="w-5 h-5 text-brand-600" />
                 </div>
                 <div>
-                    <h4 className="font-bold text-brand-900 text-sm">Browser-Side Generation</h4>
+                    <h4 className="font-bold text-brand-900 text-sm">Document Generation</h4>
                     <p className="text-xs text-brand-700/80 mt-1 leading-relaxed">
-                        Securely generating {guests.length} biometric forms directly on your device before sending via our encrypted relay.
+                        Securely generating {guests.length} biometric forms directly on your device. These will be sent via our secure relay server.
                     </p>
                 </div>
             </div>
